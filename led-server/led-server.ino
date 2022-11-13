@@ -1,34 +1,13 @@
 #include <NeoPixelConnect.h>
-#include <WiFiWebServer.h>
+#include <WiFiNINA.h>
 #include "secrets.h"
-
-const int PORT = 80;
-WiFiWebServer server(PORT);
 
 const int LED_GPIO_PIN = 15; // Data pin 3
 const int LED_COUNT = 50;
 NeoPixelConnect leds(LED_GPIO_PIN, LED_COUNT);
 
-String body;
-void handlePostLeds() {
-  body = server.arg("plain");
-  if (body.length() != LED_COUNT * 3) {
-    server.send(400);
-    return;
-  }
-
-  for (int ledI = 0; ledI < LED_COUNT; ledI++) {
-    leds.neoPixelSetValue(
-      ledI,
-      body[ledI * 3],
-      body[ledI * 3 + 1],
-      body[ledI * 3 + 2],
-      false
-    );
-  }
-
-  leds.neoPixelShow();
-}
+const int PORT = 80;
+WiFiServer server(PORT);
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -44,13 +23,40 @@ void setup() {
     delay(1000);
   }
 
-  server.on(F("/leds"), handlePostLeds);
   server.begin();
-  
-  Serial.println(WiFi.localIP());
   digitalWrite(LED_BUILTIN, HIGH);
+  Serial.println(WiFi.localIP());
+}
+
+WiFiClient client;
+
+void handleClient() {
+  leds.neoPixelClear();
+
+  int byteCount = min(client.available(), LED_COUNT);
+  Serial.print("reading ");
+  Serial.print(byteCount);
+  Serial.println(" bytes from client");
+  
+  for (int i = 0; i < byteCount; i++) {
+    byte color = client.read();
+    float chan;
+
+    chan = (color >> 5 & 0b111) / 7.0 * 255;
+    byte r = floor(chan);
+    chan = (color >> 2 & 0b111) / 7.0 * 255;
+    byte g = floor(chan);
+    chan = (color & 0b11)  / 3.0 * 255;
+    byte b = floor(chan);
+
+    leds.neoPixelSetValue(i, r, g, b, false);
+  }
+
+  leds.neoPixelShow();
+  client.stop();
 }
 
 void loop() {
-  server.handleClient();
+  client = server.available();
+  if (client) handleClient();
 }
